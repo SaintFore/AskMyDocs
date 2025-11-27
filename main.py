@@ -46,11 +46,17 @@ if vectorstore._collection.count() == 0:
     split = text_splitter.split_documents(documents=docs)
     split_clean = [
         Document(
-            page_content=re.sub(r"\s+", "", chunk.page_content), metadata=chunk.metadata
+            page_content=re.sub(r"\s+", " ", chunk.page_content),
+            metadata=chunk.metadata,
         )
         for chunk in split
     ]
     split_clean = split_clean
+    for single in split_clean[:50]:
+        print(single.page_content)
+        print("*" * 50)
+        print(single.metadata)
+        print("-" * 50)
     print(f"正在存入{len(split_clean)}个片段")
     vectorstore.add_documents(split_clean)
 else:
@@ -77,11 +83,11 @@ print(vectorstore._collection.count())
 # results = vectorstore.as_retriever().get_relevant_documents("测试")
 # print(results)
 
-retriever = vectorstore.as_retriever(search_kwargs={"k": 1})
+retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
 template = PromptTemplate.from_template(
     """
-    你是一个问答助手。请仅根据下面的上下文回答问题。如果不清楚，就说不知道。
+    你是一个基于本地知识库的 AI 助手。请根据以下上下文回答问题。
 
     上下文 (Context):
     {context}
@@ -102,11 +108,27 @@ rag_chain = (
 # print(docs)
 # print(len(docs))
 
-question = "今天适合钓鱼么"
-print(f"问: {question}")
-answer = rag_chain.invoke(question)
-print(f"答: {answer}")
+# question = "今天会下雨么"
+# print(f"问: {question}")
+# answer = rag_chain.invoke(question)
+# print(f"答: {answer}")
 # query = "coding"
 #
 # results = db.similarity_search(query=query, k=2)
 # print(results)
+#
+
+while True:
+    user_input = input("\nUser: ")
+    if user_input.lower() in ["q", "quit", "exit"]:
+        print("下次再见")
+        break
+    if not user_input.strip():
+        continue
+
+    print("AI正在思考...", end="", flush=True)
+    response = rag_chain.invoke(user_input)
+
+    print(f"\rAI: {response}")
+    source_docs = retriever.invoke(user_input)
+    print(source_docs[0].page_content)
