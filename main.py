@@ -3,8 +3,9 @@ from langchain_chroma import Chroma
 from langchain_core.documents.base import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_google_genai import GoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_ollama import OllamaLLM
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
 from langchain_community.document_loaders import TextLoader
 from langchain.chains.history_aware_retriever import create_history_aware_retriever
 from langchain.chains.retrieval import create_retrieval_chain
@@ -15,6 +16,9 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import os
+
+from langchain.agents import tool, create_tool_calling_agent, AgentExecutor
+
 
 import re
 
@@ -35,7 +39,7 @@ text_splitter = RecursiveCharacterTextSplitter(
 base_url = "http://192.168.31.60:11434"
 embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 embeddings_ollama = OllamaEmbeddings(base_url=base_url, model="embeddinggemma:300m")
-llm = GoogleGenerativeAI(model="gemini-2.5-flash")
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 llm_ollama = OllamaLLM(base_url=base_url, model="gemma3:4b")
 
 vectorstore = Chroma(persist_directory=DB_PATH, embedding_function=embeddings_ollama)
@@ -88,74 +92,104 @@ print(vectorstore._collection.count())
 
 retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
-contextualize_q_system_prompt = """
-    给定一段聊天历史和用户最新的问题，
-    如果该问题引用了历史中的上下文，请将其重新表述为一个独立的问题，使其不需要历史上下文也能被理解。
-    不要回答问题，只需返回改写后的问题；如果没有必要改写，则原样返回。
-    """
-contextualize_q_prompt = PromptTemplate.from_template(
-    contextualize_q_system_prompt
-    + "\n\n聊天历史:\n{chat_history}\n\n最新问题:\n{input}"
+
+@tool
+def search_book(query: str) -> str:
+    """只有在需要的时候才查阅书籍，输入是查询的问题"""
+    docs = retriever.invoke(query)
+    return "\n\n".join([d.page_content for d in docs])
+
+
+@tool
+def calculate_multiply(a: int, b: int) -> int:
+    """计算两个数字的乘积"""
+    return a * b
+
+
+tools = [search_book, calculate_multiply]
+agent_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", "你是一个不仅能查书籍，还能做计算的智能助手。"),
+        ("human", "{input}"),
+        ("placeholder", "{agent_scratchpad}"),  # 关键：给 AI 留出思考和调用工具的空间
+    ]
 )
+llm_bind_tools = llm.bind_tools(tools=tools)  # type: ignore
 
-history_retriever = create_history_aware_retriever(
-    llm=llm_ollama, retriever=retriever, prompt=contextualize_q_prompt
-)
+agent = create_tool_calling_agent(llm=llm, tools=tools, prompt=agent_prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
+print("🕵️ Agent 开始执行...")
+agent_executor.invoke({"input": "刻意练习需要多长时间，把这个时间乘以10是多少"})
 
-qa_system_prompt = """
-    你是一个基于本地知识库的 AI 助手。请根据以下上下文回答问题。如果不清楚就说不知道。
-    上下文 (Context):
-    {context}
-    """
-
-qa_prompt = PromptTemplate.from_template(qa_system_prompt + "\n问题: {input}")
-question_answer_chain = create_stuff_documents_chain(llm=llm_ollama, prompt=qa_prompt)
-
-rag_chain = create_retrieval_chain(history_retriever, question_answer_chain)
-
-# rag_chain = (
-#     {"context": retriever, "question": RunnablePassthrough()}
-#     | template
-#     | llm_ollama
-#     | StrOutputParser()
+# contextualize_q_system_prompt = """
+#     给定一段聊天历史和用户最新的问题，
+#     如果该问题引用了历史中的上下文，请将其重新表述为一个独立的问题，使其不需要历史上下文也能被理解。
+#     不要回答问题，只需返回改写后的问题；如果没有必要改写，则原样返回。
+#     """
+# contextualize_q_prompt = PromptTemplate.from_template(
+#     contextualize_q_system_prompt
+#     + "\n\n聊天历史:\n{chat_history}\n\n最新问题:\n{input}"
 # )
-
-# docs = retriever.get_relevant_documents("nothing to do")
-# print(docs)
-# print(len(docs))
-
-# question = "今天会下雨么"
-# print(f"问: {question}")
-# answer = rag_chain.invoke(question)
-# print(f"答: {answer}")
-# query = "coding"
 #
-# results = db.similarity_search(query=query, k=2)
-# print(results)
+# history_retriever = create_history_aware_retriever(
+#     llm=llm, retriever=retriever, prompt=contextualize_q_prompt
+# )
 #
-chat_history = []
-
-while True:
-    user_input = input("\nHuman: ")
-    if user_input.lower() in ["q", "quit", "exit"]:
-        print("下次再见")
-        break
-    if not user_input.strip():
-        continue
-
-    print("AI正在思考...", end="", flush=True)
-    response = rag_chain.invoke({"input": user_input, "chat_history": chat_history})
-
-    print(f"\rAI: {response['answer']}")
-
-    # 历史
-    chat_history.append(HumanMessage(content=user_input))
-    chat_history.append(AIMessage(content=response["answer"]))
-
-    # source_docs = retriever.invoke(
-    #     user_input
-    # )  # 此retriever并非history_retriever，这里有bug
-    # for i in chat_history:
-    #     print(i)
-    # print(len(response["context"]))
+#
+# qa_system_prompt = """
+#     你是一个基于本地知识库的 AI 助手。请根据以下上下文回答问题。如果不清楚就说不知道。
+#     上下文 (Context):
+#     {context}
+#     """
+#
+# qa_prompt = PromptTemplate.from_template(qa_system_prompt + "\n问题: {input}")
+# question_answer_chain = create_stuff_documents_chain(llm=llm_ollama, prompt=qa_prompt)
+#
+# rag_chain = create_retrieval_chain(history_retriever, question_answer_chain)
+#
+# # rag_chain = (
+# #     {"context": retriever, "question": RunnablePassthrough()}
+# #     | template
+# #     | llm_ollama
+# #     | StrOutputParser()
+# # )
+#
+# # docs = retriever.get_relevant_documents("nothing to do")
+# # print(docs)
+# # print(len(docs))
+#
+# # question = "今天会下雨么"
+# # print(f"问: {question}")
+# # answer = rag_chain.invoke(question)
+# # print(f"答: {answer}")
+# # query = "coding"
+# #
+# # results = db.similarity_search(query=query, k=2)
+# # print(results)
+# #
+# chat_history = []
+#
+# while True:
+#     user_input = input("\nHuman: ")
+#     if user_input.lower() in ["q", "quit", "exit"]:
+#         print("下次再见")
+#         break
+#     if not user_input.strip():
+#         continue
+#
+#     print("AI正在思考...", end="", flush=True)
+#     response = rag_chain.invoke({"input": user_input, "chat_history": chat_history})
+#
+#     print(f"\rAI: {response['answer']}")
+#
+#     # 历史
+#     chat_history.append(HumanMessage(content=user_input))
+#     chat_history.append(AIMessage(content=response["answer"]))
+#
+#     # source_docs = retriever.invoke(
+#     #     user_input
+#     # )  # 此retriever并非history_retriever，这里有bug
+#     # for i in chat_history:
+#     #     print(i)
+#     # print(len(response["context"]))
