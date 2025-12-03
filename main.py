@@ -5,8 +5,12 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_google_genai import GoogleGenerativeAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_ollama import OllamaLLM
-from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
-from langchain_community.document_loaders import TextLoader
+from langchain_core.prompts import (
+    MessagesPlaceholder,
+    PromptTemplate,
+    ChatPromptTemplate,
+)
+from langchain_community.document_loaders import TextLoader, chatgpt
 from langchain.chains.history_aware_retriever import create_history_aware_retriever
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -106,22 +110,24 @@ def calculate_multiply(a: int, b: int) -> int:
     return a * b
 
 
+chat_history = []
 tools = [search_book, calculate_multiply]
 agent_prompt = ChatPromptTemplate.from_messages(
     [
-        ("system", "你是一个不仅能查书籍，还能做计算的智能助手。"),
+        ("system", "你是一个不仅能查书籍，遇到计算题还能使用计算器的人工智能。"),
+        MessagesPlaceholder(variable_name="chat_history"),
         ("human", "{input}"),
         ("placeholder", "{agent_scratchpad}"),  # 关键：给 AI 留出思考和调用工具的空间
     ]
 )
-llm_bind_tools = llm.bind_tools(tools=tools)  # type: ignore
+# llm_bind_tools = llm.bind_tools(tools=tools)  # 后面的create_tool_calling_agent会自动绑定工具的
 
 agent = create_tool_calling_agent(llm=llm, tools=tools, prompt=agent_prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
-print("🕵️ Agent 开始执行...")
-agent_executor.invoke({"input": "刻意练习需要多长时间，把这个时间乘以10是多少"})
-
+# print("🕵️ Agent 开始执行...")
+# agent_executor.invoke({"input": "刻意练习需要多长时间，把这个时间乘以10是多少"})
+#
 # contextualize_q_system_prompt = """
 #     给定一段聊天历史和用户最新的问题，
 #     如果该问题引用了历史中的上下文，请将其重新表述为一个独立的问题，使其不需要历史上下文也能被理解。
@@ -138,7 +144,6 @@ agent_executor.invoke({"input": "刻意练习需要多长时间，把这个时�
 #
 #
 # qa_system_prompt = """
-#     你是一个基于本地知识库的 AI 助手。请根据以下上下文回答问题。如果不清楚就说不知道。
 #     上下文 (Context):
 #     {context}
 #     """
@@ -147,7 +152,7 @@ agent_executor.invoke({"input": "刻意练习需要多长时间，把这个时�
 # question_answer_chain = create_stuff_documents_chain(llm=llm_ollama, prompt=qa_prompt)
 #
 # rag_chain = create_retrieval_chain(history_retriever, question_answer_chain)
-#
+
 # # rag_chain = (
 # #     {"context": retriever, "question": RunnablePassthrough()}
 # #     | template
@@ -164,32 +169,34 @@ agent_executor.invoke({"input": "刻意练习需要多长时间，把这个时�
 # # answer = rag_chain.invoke(question)
 # # print(f"答: {answer}")
 # # query = "coding"
-# #
-# # results = db.similarity_search(query=query, k=2)
+# # # results = db.similarity_search(query=query, k=2)
 # # print(results)
 # #
-# chat_history = []
-#
-# while True:
-#     user_input = input("\nHuman: ")
-#     if user_input.lower() in ["q", "quit", "exit"]:
-#         print("下次再见")
-#         break
-#     if not user_input.strip():
-#         continue
-#
-#     print("AI正在思考...", end="", flush=True)
-#     response = rag_chain.invoke({"input": user_input, "chat_history": chat_history})
-#
-#     print(f"\rAI: {response['answer']}")
-#
-#     # 历史
-#     chat_history.append(HumanMessage(content=user_input))
-#     chat_history.append(AIMessage(content=response["answer"]))
-#
-#     # source_docs = retriever.invoke(
-#     #     user_input
-#     # )  # 此retriever并非history_retriever，这里有bug
-#     # for i in chat_history:
-#     #     print(i)
-#     # print(len(response["context"]))
+
+while True:
+    user_input = input("\nHuman: ")
+    if user_input.lower() in ["q", "quit", "exit"]:
+        print("下次再见")
+        break
+    if not user_input.strip():
+        continue
+
+    print("AI正在思考...", end="", flush=True)
+    # response = rag_chain.invoke({"input": user_input, "chat_history": chat_history})
+
+    response = agent_executor.invoke(
+        {"input": user_input, "chat_history": chat_history}
+    )
+    # print(response)
+    print(f"\rAI: {response['output']}")
+
+    # 历史
+    chat_history.append(HumanMessage(content=user_input))
+    chat_history.append(AIMessage(content=response["output"]))
+
+    # source_docs = retriever.invoke(
+    #     user_input
+    # )  # 此retriever并非history_retriever，这里有bug
+    # for i in chat_history:
+    #     print(i)
+    # print(len(response["context"]))
