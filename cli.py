@@ -1,13 +1,9 @@
 from langchain_core.messages import AIMessage, HumanMessage
 from dotenv import load_dotenv
 
-# import streamlit as st
 import argparse
 import backend as be
 
-
-# st.set_page_config(page_title="My AI Agent", page_icon="🤖")
-# st.title("🤖 本地全能知识库助手")
 
 load_dotenv()
 
