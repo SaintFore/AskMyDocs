@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 import streamlit as st
 import backend as be
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_community.callbacks import StreamlitCallbackHandler
 
 st.set_page_config(page_title="My AI Agent", page_icon="🤖")
 st.title("🤖 本地全能知识库助手")
@@ -56,16 +57,18 @@ if prompt := st.chat_input("输入问题..."):
     st.session_state.ui_messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("ai"):
-        placeholder = st.empty()
-        placeholder.markdown("AI is thinking...")
+        # placeholder = st.empty()
+        # placeholder.markdown("AI is thinking...")
+        st_callback = StreamlitCallbackHandler(st.container())
 
         try:
             response = create_agent(config).invoke(
-                {"input": prompt, "chat_history": st.session_state.chat_history}
+                {"input": prompt, "chat_history": st.session_state.chat_history},
+                config={"callbacks": [st_callback]},
             )
 
             ai_output = response["output"]
-            placeholder.markdown(ai_output)
+            st.markdown(ai_output)
             # 更新状态
             st.session_state.ui_messages.append(
                 {"role": "assistant", "content": ai_output}
@@ -73,4 +76,4 @@ if prompt := st.chat_input("输入问题..."):
             st.session_state.chat_history.append(HumanMessage(content=prompt))
             st.session_state.chat_history.append(AIMessage(content=ai_output))
         except Exception as e:
-            placeholder.error(e)
+            st.error(e)
