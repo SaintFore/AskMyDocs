@@ -2,7 +2,6 @@ from dotenv import load_dotenv
 import streamlit as st
 import backend as be
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_community.callbacks import StreamlitCallbackHandler
 
 st.set_page_config(page_title="My AI Agent", page_icon="🤖")
 st.title("🤖 本地全能知识库助手")
@@ -56,24 +55,70 @@ if prompt := st.chat_input("输入问题..."):
         st.markdown(prompt)
     st.session_state.ui_messages.append({"role": "user", "content": prompt})
 
+    # 防止context爆炸
+    recent_history = st.session_state.chat_history[-10:]
+    current_history = recent_history + [HumanMessage(content=prompt)]
     with st.chat_message("ai"):
-        # placeholder = st.empty()
-        # placeholder.markdown("AI is thinking...")
-        st_callback = StreamlitCallbackHandler(st.container())
+        # expanded=True 表示默认展开，让用户看到 AI 在干活
+        status_container = st.status("🤖 AI 正在思考...", expanded=True)
 
         try:
-            response = create_agent(config).invoke(
-                {"input": prompt, "chat_history": st.session_state.chat_history},
-                config={"callbacks": [st_callback]},
+            generated_msgs = []
+            full_response = ""
+
+            events = agent_executor.stream({"messages": current_history})
+
+            for event in events:
+                # event 字典的 key 是节点名 (如 'llm', 'tools')
+                # value 是该节点的输出 (如 {'messages': [...]})
+                for node_name, values in event.items():
+                    if "messages" in values:
+                        new_messages = values["messages"]
+                        last_msg = new_messages[-1]
+
+                        generated_msgs.append(last_msg)
+
+                        if isinstance(last_msg, AIMessage) and last_msg.tool_calls:
+                            tool_name = last_msg.tool_calls[0]["name"]
+                            tool_args = last_msg.tool_calls[0]["args"]
+                            status_container.write(f"🛠️ **计划调用工具**: `{tool_name}`")
+                            status_container.json(tool_args)
+
+                        elif node_name == "tools":
+                            # 为了不让大量文本刷屏，截取前200字
+                            content_preview = last_msg.content[:200]
+                            if len(last_msg.content) > 200:
+                                content_preview += "..."
+                            status_container.write(
+                                f"📚 **工具返回结果**: {content_preview}"
+                            )
+
+                        elif (
+                            isinstance(last_msg, AIMessage) and not last_msg.tool_calls
+                        ):
+                            full_response = last_msg.content
+                            # 这里暂时不显示，等循环结束在外面统一显示，或者你想在 status 里也显示
+
+            status_container.update(
+                label="✅ 回答完成", state="complete", expanded=False
             )
 
-            ai_output = response["output"]
-            st.markdown(ai_output)
-            # 更新状态
+            if full_response:
+                st.markdown(full_response)
+            else:
+                # 兜底：万一循环里没抓到 content，尝试从 generated_msgs 找最后一条
+                if generated_msgs and isinstance(generated_msgs[-1], AIMessage):
+                    full_response = generated_msgs[-1].content
+                    st.markdown(full_response)
+
             st.session_state.ui_messages.append(
-                {"role": "assistant", "content": ai_output}
+                {"role": "assistant", "content": full_response}
             )
+
+            # 更新 LangChain 记忆
             st.session_state.chat_history.append(HumanMessage(content=prompt))
-            st.session_state.chat_history.append(AIMessage(content=ai_output))
+            st.session_state.chat_history.extend(generated_msgs)
+
         except Exception as e:
-            st.error(e)
+            status_container.update(label="❌ 发生错误", state="error")
+            st.error(f"处理过程中出错: {e}")

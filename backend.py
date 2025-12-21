@@ -1,6 +1,11 @@
 from dataclasses import dataclass
 import os
 import re
+from typing import TypedDict, List, Annotated
+from langchain_core.messages import BaseMessage, AIMessage
+from langgraph.graph import StateGraph, END
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
 from langchain_chroma import Chroma
 from langchain_core.documents.base import Document
 from langchain_core.prompts import (
@@ -8,17 +13,21 @@ from langchain_core.prompts import (
     ChatPromptTemplate,
 )
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.agents import tool, create_tool_calling_agent, AgentExecutor
+from langchain_core.tools import tool
 from langchain_community.document_loaders import TextLoader
 
 # google
 # from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_google_genai import ChatGoogleGenerativeAI
+# from langchain_google_genai import ChatGoogleGenerativeAI
 
 # OllamaLLM
 # from langchain_ollama import OllamaLLM
-# from langchain_ollama import ChatOllama
+from langchain_ollama import ChatOllama
 from langchain_ollama import OllamaEmbeddings
+
+
+class AgentState(TypedDict):
+    messages: Annotated[List[BaseMessage], add_messages]
 
 
 @dataclass
@@ -73,28 +82,50 @@ def init_vectorstore(config: AppConfig) -> Chroma:
     return vectorstore
 
 
-def init_agent(tools, config) -> AgentExecutor:
-    # llm = ChatOllama(
-    #     base_url=config.base_url, model="gemma3:4b"
-    # )  # 绑定工具不能用ollamaLLM 但是可以使用ChatOllama
-    llm = ChatGoogleGenerativeAI(model="gemini-robotics-er-1.5-preview")
+def init_agent(tools, config):
+    llm = ChatOllama(
+        base_url=config.base_url, model="ministral-3:3b"
+    )  # 绑定工具不能用ollamaLLM 但是可以使用ChatOllama
+    # llm = ChatGoogleGenerativeAI(model="gemini-robotics-er-1.5-preview")
 
-    agent_prompt = ChatPromptTemplate.from_messages(
+    llm_bind_tools = llm.bind_tools(
+        tools=tools
+    )  # 后面的create_tool_calling_agent会自动绑定工具的，不过现在已经没有这个方法了。
+    tool_node = ToolNode(tools)
+    prompt = ChatPromptTemplate.from_messages(
         [
-            ("system", "你是一个不仅能查书籍，遇到计算题还能使用计算器的人工智能。"),
-            MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{input}"),
             (
-                "placeholder",
-                "{agent_scratchpad}",
-            ),  # 关键：给 AI 留出思考和调用工具的空间
+                "system",
+                "你是一个能查阅书籍，遇到计算题还能使用计算器的人工智能。",
+            ),
+            MessagesPlaceholder(variable_name="chat_history"),
         ]
     )
-    # llm_bind_tools = llm.bind_tools(tools=tools)  # 后面的create_tool_calling_agent会自动绑定工具的
-    agent = create_tool_calling_agent(llm=llm, tools=tools, prompt=agent_prompt)
-    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
-    return agent_executor
+    def call_llm(state: AgentState):
+        chain = prompt | llm_bind_tools
+        response = chain.invoke({"chat_history": state["messages"]})
+        # 使用了add_messages，会自动append
+        return {"messages": [response]}
+
+    def should_continue(state: AgentState):
+        last_message = state["messages"][-1]
+        # if hasattr(last, "tool_calls") and last.tool_calls:
+        #     return "tools"
+        if isinstance(last_message, AIMessage) and last_message.tool_calls:
+            return "tools"
+        return END
+
+    graph = StateGraph(AgentState)
+
+    graph.add_node("llm", call_llm)
+    graph.add_node("tools", tool_node)
+
+    graph.set_entry_point("llm")
+    graph.add_conditional_edges("llm", should_continue)
+    graph.add_edge("tools", "llm")
+
+    return graph.compile()
 
 
 def create_tools(retriever) -> list:
