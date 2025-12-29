@@ -1,59 +1,85 @@
-# 🤖 AskMyDocs
+# 📚 ASK MY DOCS
 
-AskMyDocs 是一个基于 `LangChain` 的本地知识库问答系统。它能够加载本地文档，并使用大型语言模型来回答你的问题。
+```text
+    ___         __      __  ___              ____                
+   /   |  _____/ /__   /  |/  /_  __        / __ \____  __________
+  / /| | / ___/ //_/  / /|_/ / / / /       / / / / __ \/ ___/ ___/
+ / ___ |(__  ) ,<    / /  / / /_/ /       / /_/ / /_/ / /__(__  ) 
+/_/  |_/____/_/|_|  /_/  /_/\__, /        \____/\____/\___/____/  
+                           /____/                                 
+```
 
-## ✨ 主要功能
+<div align="center">
 
-- **本地知识库**: 使用你自己的文档作为知识库，让 AI 回答与你的文档相关的问题。
-- **多种接口**: 同时提供了 Web 界面和命令行界面，满足不同场景下的使用需求。
-- **高度可配置**: 支持自定义 `chunk size`, `chunk overlap`, `K` 等参数，以优化问答效果。
-- **多模型支持**: 支持 `Ollama` 和 `Google Generative AI` 等多种大型语言模型。
-- **工具扩展**: 集成了计算器等工具，让 AI 在需要时可以进行计算。
+[![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white)](https://python.langchain.com/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Ollama](https://img.shields.io/badge/Ollama-000000?style=for-the-badge&logo=ollama&logoColor=white)](https://ollama.com/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
-## 🛠️ 如何使用
+**"Command your documents, summon the wisdom of AI."**
+主宰你的文档，召唤 AI 的智慧。
 
-### 1. 安装依赖
+[Installation](#installation) • [Usage](#usage) • [Features](#features) • [Tech Stack](#tech-stack)
 
+</div>
+
+---
+
+## ⚡ What is AskMyDocs?
+
+**AskMyDocs** 是一个基于 **LangChain** 构建的本地知识库问答系统。它不仅是一个简单的聊天机器人，更是你的专属私有文档管家。通过加载本地 PDF、TXT 等文档，它能让 LLM（如 Ollama 或 Gemini）在你的知识背景下提供精准、无幻觉的回答。
+
+**让 AI 真正读懂你的本地资料。**
+
+## 🚀 Features
+
+- **📚 Local Knowledge Oracle**: 构建基于本地文档的向量数据库，实现 RAG (Retrieval-Augmented Generation)。
+- **🤖 Hybrid Model Support**: 完美适配 `Ollama` 本地运行或 `Google Gemini` 高性能 API。
+- **🛠️ Integrated Tooling**: 内置计算器等扩展工具，让 AI 能够处理复杂的逻辑运算。
+- **💻 Dual-Mode Interface**: 同时提供极简 CLI 交互与直观的 Streamlit Web 界面。
+
+## 📦 Installation
+
+### 1. 克隆项目
+```bash
+git clone https://github.com/SaintFore/AskMyDocs.git
+cd AskMyDocs
+```
+
+### 2. 安装依赖
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 设置 API Keys
-
-在项目根目录下创建一个 `.env` 文件，并添加你的 API keys：
-
-```
+### 3. 配置环境变量
+创建 `.env` 文件并填入你的 API Key（如果使用 Gemini）：
+```env
 GOOGLE_API_KEY="your_google_api_key"
 ```
 
-### 3. 准备知识库
+## 💻 Usage
 
-将你的知识库文档（例如，一个 `.txt` 文件）放在 `books` 目录下。默认情况下，程序会加载 `books/Learning.txt` 文件。
-
-### 4. 运行 Web 界面
-
+### Web 模式 (推荐)
 ```bash
 streamlit run app.py
 ```
+访问 `http://localhost:8501`，上传文档并开始提问。
 
-然后，在浏览器中打开 `http://localhost:8501`。
-
-### 5. 运行命令行界面
-
+### CLI 模式
 ```bash
-python cli.py
+python cli.py --chunk-size 1000 --k 3
 ```
 
-## ⚙️ 配置
+## 🛠️ Tech Stack
 
-你可以在 Web 界面的侧边栏中配置 `chunk size`, `chunk overlap` 和 `K` 等参数。
+- **Framework**: LangChain
+- **UI**: Streamlit
+- **LLM Connectors**: Google Generative AI, Ollama
+- **Vector Store**: FAISS (Local)
 
-在命令行界面中，你可以通过命令行参数来配置这些参数：
+---
 
-```bash
-python cli.py --chunk-size 1000 --chunk-overlap 100 --k 3
-```
-
-## 🤝 贡献
-
-欢迎任何形式的贡献！如果你有任何建议或问题，请随时提出 Issue。
+<div align="center">
+Created with 🤖 by <a href="https://github.com/SaintFore">SaintFore</a>
+</div>
